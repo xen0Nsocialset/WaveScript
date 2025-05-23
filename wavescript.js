@@ -1,39 +1,68 @@
-const fs = require("fs");
+// Определяем функции WaveScript в глобальной области
+window.dw = prompt;
+window.msg = alert;
+window.cons = { print: console.log };
 
-// Таблица замены WaveScript → JS (с учётом границ слов)
-const replacements = {
-    "\\bcns\\.print\\b": "console.log",  // `cns.print` → `console.log`
-    "\\bper\\b": "let",                   // `per` → `let` (но не затронет `person`)
-    "\\bcon\\b": "const",                 // `con` → `const` (но не затронет `console`)
-    "\\bfunc\\b": "function",             // `func` → `function`
-    "\\bdw\\b": "prompt",                 // `dw` → `prompt`
-    "\\belif\\b": "else if",              // `elif` → `else if`
-    "\\bdoc\\.getElementId\\b": "document.getElementById",
-    "\\bdoc\\.getElementsClassName\\b": "document.getElementsByClassName",
-};
+// Функция транспиляции
+function transpileWaveScript(code) {
+    const replacements = {
+        "\\bcons\\.print\\b": "console.log",
+        "\\bper\\b": "let",
+        "\\bcon\\b": "const",
+        "\\bfunc\\b": "function",
+        "\\bdw\\b": "prompt",
+        "\\bmsg\\b": "alert",
+        "\\belif\\b": "else if",
+        "\\bdoc\\.getElementId\\b": "document.getElementById",
+        "\\bdoc\\.getElementsClassName\\b": "document.getElementsByClassName",
+        "\\bdoc\\.getElementsTagName\\b": "document.getElementsTagName",
 
-// Транспилируем код
-function transpile(code) {
+    };
+
     let jsCode = code;
-    
-    // Заменяем ключевые слова с учётом границ слов
     for (const [ws, js] of Object.entries(replacements)) {
         jsCode = jsCode.replace(new RegExp(ws, "g"), js);
     }
-
-    // Доп. правки (например, == → ===)
-    jsCode = jsCode.replace(/(if\s*\(.*?)\s*==\s*(.*?\))/g, "$1 === $2");
-
+    jsCode = jsCode.replace(/==/g, "===");
     return jsCode;
 }
 
-// Чтение файла .ws и преобразование в .js
-function compileFile(inputFile, outputFile) {
-    const wsCode = fs.readFileSync(inputFile, "utf-8");
-    const jsCode = transpile(wsCode);
-    fs.writeFileSync(outputFile, jsCode);
-    console.log(`✅ Скомпилировано: ${inputFile} → ${outputFile}`);
+// Обработка встроенных скриптов
+function processInlineScripts() {
+    document.querySelectorAll('script[type="text/wavescript"]').forEach(script => {
+        const newScript = document.createElement('script');
+        newScript.textContent = transpileWaveScript(script.textContent);
+        script.replaceWith(newScript);
+    });
 }
 
-// Пример использования
-compileFile("example.ws", "example.js");
+// Функция для загрузки .ws файлов
+async function loadExternalWS(script) {
+  try {
+    const response = await fetch(script.src);
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const wsCode = await response.text();
+    const jsCode = transpileWaveScript(wsCode);
+    
+    const newScript = document.createElement('script');
+    newScript.textContent = jsCode;
+    script.replaceWith(newScript);
+  } catch (error) {
+    console.error('Ошибка загрузки WaveScript:', error);
+  }
+}
+
+// Обработка всех скриптов
+document.addEventListener('DOMContentLoaded', () => {
+  const scripts = document.querySelectorAll('script[type="text/wavescript"]');
+  scripts.forEach(script => {
+    if (script.src) {
+      loadExternalWS(script);  // Для внешних файлов
+    } else {
+      const jsCode = transpileWaveScript(script.textContent);
+      const newScript = document.createElement('script');
+      newScript.textContent = jsCode;
+      script.replaceWith(newScript);
+    }
+  });
+});
